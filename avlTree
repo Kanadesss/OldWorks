@@ -1,0 +1,112 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+typedef struct Node{
+    int key;
+    unsigned char height;
+    struct Node* left;
+    struct Node* right;
+} Node;
+
+unsigned char height(Node* node){
+    return node ? node->height : 0;
+}
+
+int balanceFactor(Node* node){
+    return height(node->right) - height(node->left);
+}
+
+void fixHeight(Node* node){
+    unsigned char leftHeight = height(node->left);
+    unsigned char rightHeight = height(node->right);
+    node->height = (leftHeight > rightHeight ? leftHeight : rightHeight) + 1;
+}
+
+Node* rotateRight(Node* node){
+    Node* tmp = node->left;
+    node->left = tmp->right;
+    tmp->right = node;
+    fixHeight(node);
+    fixHeight(tmp);
+    return tmp;
+}
+
+Node* rotateLeft(Node* node){
+    Node* tmp = node->right;
+    node->right = tmp->left;
+    tmp->left = node;
+    fixHeight(node);
+    fixHeight(tmp);
+    return tmp;
+}
+
+Node* balance(Node* head){
+    fixHeight(head);
+    if (balanceFactor(head) == 2){
+        if (balanceFactor(head->right) < 0){
+            head->right = rotateRight(head->right);
+        }
+        return rotateLeft(head);
+    }
+    if (balanceFactor(head) == -2){
+        if (balanceFactor(head->left) > 0){
+            head->left = rotateLeft(head->left);
+        }
+        return rotateRight(head);
+    }
+    return head;
+}
+
+Node* insert(Node* head, int curNumber, Node *nodes, int i){
+    if (!head){
+        Node *newHead = &nodes[i];
+        newHead->height = 1;
+        newHead->key = curNumber;
+        newHead->right = NULL;
+        newHead->left = NULL;
+        return newHead;
+    }
+    if (curNumber > head->key){
+        head->right = insert(head->right, curNumber, nodes, i);
+    } else{
+        head->left = insert(head->left, curNumber, nodes, i);
+    }
+    return balance(head);
+}
+
+int main()
+{
+    FILE* in = fopen("in.txt", "r");
+    FILE* out = fopen("out.txt", "w");
+    int numbersCount;
+    if (fscanf(in, "%d", &numbersCount) != 1){
+        fclose(in);
+        fclose(out);
+        return 0;
+    }
+    Node *nodes = (Node *)malloc(sizeof(Node) * (numbersCount + 1));
+    Node* head = &nodes[0];
+    head->height = 0;
+    for (int i = 0; i < numbersCount; i++){
+        int curNumber;
+        if (fscanf(in, " %d", &curNumber) != 1){
+            fclose(in);
+            fclose(out);
+            free(nodes);
+            return 0;
+        }
+        if (i != 0){
+            head = insert(head, curNumber, nodes, i);
+        } else{
+            head->key = curNumber;
+            head->height = 1;
+            head->left = NULL;
+            head->right = NULL;
+        }
+    }
+    fprintf(out, "%hhu", height(head));
+    fclose(in);
+    fclose(out);
+    free(nodes);
+    return 0;
+}
