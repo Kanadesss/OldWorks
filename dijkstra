@@ -1,0 +1,236 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+
+#define INFINITY 4294967295  // 2^32
+#define USED 1
+
+int checkRange(int min, int max, int value){
+    if(min <= value && value <= max){
+        return 1;
+    }
+    return 0;
+}
+
+int readInputCount(int *N, int *M, int *S,  int *F, FILE* in, FILE* out){
+    int fscanfValue = fscanf(in, "%d", N);
+    if(fscanfValue != 1){
+        if(fscanfValue == EOF && fscanfValue == 0){
+            fprintf(out, "bad number of lines");
+        }
+        return 0;
+    }
+    if(!checkRange(0, 5000, *N)){
+        fprintf(out, "bad number of vertices");
+        return 0;
+    }
+    fscanfValue = fscanf(in, "%d %d", S, F);
+    if(fscanfValue != 2){
+        if(fscanfValue == EOF && fscanfValue == 0){
+            fprintf(out, "bad number of lines");
+        }
+        return 0;
+    }
+    if(!checkRange(1, *N, *S) || !checkRange(1, *N, *F)){
+        fprintf(out, "bad vertex");
+        return 0;
+    }
+    fscanfValue = fscanf(in, "%d", M);
+    if(fscanfValue != 1){
+        if(fscanfValue == EOF && fscanfValue == 0){
+            fprintf(out, "bad number of lines");
+        }
+        return 0;
+    }
+    if(!checkRange(0, *N * (*N - 1) / 2, *M)){
+        fprintf(out, "bad number of edges");
+        return 0;
+    }
+    return 1;
+}
+
+void insertEdge(unsigned int **adjacencyMatrix, int from, int to, unsigned int length){
+    adjacencyMatrix[from - 1][to - 1] = length;
+    adjacencyMatrix[to - 1][from - 1] = length;
+}
+
+int readEdges(unsigned int **adjacencyMatrix, int N, int M, FILE* in, FILE* out){
+    int from, to;
+    unsigned int length;
+    int linesCount = 0;
+    int fscanfValue = fscanf(in, "%d %d %u", &from, &to, &length);
+    while(fscanfValue != EOF){
+        if(fscanfValue != 3){
+            if(fscanfValue == EOF && fscanfValue == 0){
+                fprintf(out, "bad number of lines");
+            }
+            return 0;
+        }
+        if(!checkRange(1, N, from) || !checkRange(1, N, to)){
+            fprintf(out, "bad vertex");
+            return 0;
+        }
+        if(!checkRange(0, INT_MAX, length)){
+            fprintf(out, "bad length");
+            return 0;
+        }
+        insertEdge(adjacencyMatrix, from, to, length);
+        linesCount++;
+        fscanfValue = fscanf(in, "%d %d %u", &from, &to, &length);
+    }
+    if(linesCount != M){
+        fprintf(out, "bad number of lines");
+        return 0;
+    }
+    return 1;
+}
+
+unsigned int** createAdjacencyMatrix(int N){
+    unsigned int **adjacencyMatrix = (unsigned int **)malloc(sizeof(unsigned int *) * N);
+    for(int i = 0; i < N; i++){
+        adjacencyMatrix[i] = (unsigned int *)malloc(sizeof(unsigned int) * N);
+        for(int j = 0; j < N; j++){
+            adjacencyMatrix[i][j] = INFINITY;
+        }
+    }
+    return adjacencyMatrix;
+}
+
+void freeAdjMatrix(unsigned int** adjMatrix, int N){
+    for(int i = 0; i < N; i++){
+        free(adjMatrix[i]);
+    }
+    free(adjMatrix);
+}
+
+void initialization(unsigned int dist[], int p[], int N, int S){
+    for(int i = 0; i < N; i++){
+        dist[i] = INFINITY;
+        p[i] = INT_MAX;
+    }
+    dist[S] = 0;
+    p[S] -= 1;
+}
+
+int isSumCorrect(unsigned int a, unsigned int b){      // 1 - correct
+    if(a > INT_MAX || b > INT_MAX){
+        return 0;
+    }
+    unsigned int sum = a + b;
+    unsigned int one = 1;
+    if(sum & (one << (sizeof(unsigned int) * 8 - 1))){
+        return 0;
+    }
+    return 1;
+}
+
+void updateLength(unsigned int **adjMatrix, int p[], unsigned int dist[], int overflow[], int curVert, int N){
+    for(int j = 0; j < N; j++){
+        unsigned int len = adjMatrix[curVert][j];
+        if(len != INFINITY && dist[curVert] + len < dist[j]){
+            dist[j] = dist[curVert] + len;
+            overflow[j] = overflow[curVert];
+            p[j] = curVert;
+            if(!isSumCorrect(dist[curVert], len)){
+                overflow[j]++;
+                dist[j] -= INT_MAX;
+            }
+        }
+    }
+}
+
+int dijkstra(unsigned int **adjMatrix, int p[], unsigned int dist[], int overflow[], int N, int S){
+    char *used = (char *)calloc(N, sizeof(char));
+    initialization(dist, p, N, S);
+    for(int i = 0; i < N; i++){
+        int curVert = -1;
+        for(int j = 0; j < N; j++){
+            if(!used[j] && (curVert == -1 || dist[j] < dist[curVert])){
+                curVert = j;
+            }
+        }
+        if(curVert == -1 || dist[curVert] == INFINITY){
+            break;
+        }
+        used[curVert] = USED;
+        updateLength(adjMatrix, p, dist, overflow, curVert, N);
+    }
+    free(used);
+    return 0;
+}
+
+void printAnswer(unsigned int **adjMatrix, unsigned int dist[], int p[], int overflow[], int N, int S, int F, FILE* out){
+    int overflowCount = 0;
+    for(int i = 0; i < N; i++){
+        if(p[i] == INT_MAX){
+            fprintf(out, "oo ");
+        }else if(overflow[i]){
+            fprintf(out, "INT_MAX+ ");
+        }else{
+            fprintf(out, "%u ", dist[i]);
+        }
+        if(adjMatrix[F][i] != INFINITY && adjMatrix[F][i] + dist[i] > INT_MAX && F != S){
+            overflowCount++;
+        }
+    }
+    fprintf(out, "\n");
+    int num = F;
+    if(p[F] == INT_MAX){
+        fprintf(out, "no path");
+    }else  if(overflowCount >= 2){
+        fprintf(out, "overflow");
+    }else{
+        fprintf(out, "%d ", F + 1);
+        while(p[num] != S && F != S){
+            fprintf(out, "%d ", p[num] + 1);
+            num = p[num];
+        }
+        if(F != S){
+            fprintf(out, "%d", S + 1);
+        }
+    }
+}
+
+int isInputBad(int M, int S, int F, FILE* out){
+    if(M == 0){
+        if(F != S){
+            fprintf(out, "0 oo\nno path");
+        }else{
+            fprintf(out, "0\n1");
+        }
+        return 1;
+    }
+    return 0;
+}
+
+int main(){
+    FILE* in = fopen("in.txt", "r");
+    FILE* out = fopen("out.txt", "w");
+    int N, M, S, F;
+    if(!readInputCount(&N, &M, &S, &F, in, out)){
+        fclose(in);
+        fclose(out);
+        return 0;
+    }
+    unsigned int **adjacencyMatrix = createAdjacencyMatrix(N);
+    if(!readEdges(adjacencyMatrix, N, M, in, out)){
+        fclose(in);
+        fclose(out);
+        freeAdjMatrix(adjacencyMatrix, N);
+        return 0;
+    }
+    if(!isInputBad(M, S - 1, F - 1, out)){
+        unsigned int *dist = (unsigned int *)malloc(N * sizeof(unsigned int));
+        int *p = (int *)malloc(N * sizeof(int));
+        int *overflow = (int *)calloc(N, sizeof(int));
+        dijkstra(adjacencyMatrix, p, dist, overflow, N, S - 1);
+        printAnswer(adjacencyMatrix, dist, p, overflow, N, S - 1, F - 1, out);
+        fclose(in);
+        fclose(out);
+        free(dist);
+        free(p);
+        free(overflow);
+    }
+    freeAdjMatrix(adjacencyMatrix, N);
+    return 0;
+}
