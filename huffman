@@ -1,0 +1,474 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define LENGTH 512
+#define NOTLEAF 3000
+#define CONSIDER 0
+#define NOTCONSIDER 1
+
+typedef struct Tree{
+    unsigned int value;
+    int frequency;
+    struct Tree* left;
+    struct Tree* right;
+} Tree;
+
+typedef struct Code{
+    char code[256];
+} Code;
+
+void printNode(Tree* node){
+    fprintf(stdout, "\nsymbol - %c, frequency - %d", node->value, node->frequency);
+}
+
+void printTree(Tree* root){
+    if(root->left == NULL){
+        printNode(root);
+    }else{
+        printTree(root->left);
+        printTree(root->right);
+    }
+}
+void calculateSymbolsCountAndCollection(int symbolsCountArray[], char inputArray[], int inputSize, unsigned int *symbolsCount, int *symbolsCollection, FILE* in){
+    int leaveCycle = 0;
+    while(leaveCycle != 1){
+        for(int i = 0; i < inputSize; i++){
+            unsigned char curNum = inputArray[i];
+            if(symbolsCountArray[curNum] == 0){
+                *symbolsCollection += 1;
+            }
+            symbolsCountArray[curNum] += 1;
+        }
+        if(inputSize == LENGTH){
+            inputSize = fread(inputArray, sizeof(char), LENGTH, in);
+            *symbolsCount += inputSize;
+        }else{
+            leaveCycle = 1;
+        }
+    }
+    fseek(in, 1, SEEK_SET);
+}
+
+Tree* createNode(int value, int frequency, Tree *left, Tree *right){
+    Tree *newNode = (Tree *)malloc(sizeof(Tree));
+    newNode->value = value;
+    newNode->frequency = frequency;
+    newNode->left = left;
+    newNode->right = right;
+    return newNode;
+}
+
+void putInNode(Tree* node, unsigned int value, int frequency, Tree* left, Tree* right){
+    node->value = value;
+    node->frequency = frequency;
+    node->left = left;
+    node->right = right;
+}
+
+void makeNodeArray(int symbolsFrequency[], Tree nodesArray[]){
+    int curNodeNumber = 0;
+    for(int i = 0; i < 256; i++){
+        if(symbolsFrequency[i] != 0){
+            putInNode(&nodesArray[curNodeNumber], i, symbolsFrequency[i], NULL, NULL);
+            curNodeNumber++;
+        }
+    }
+}
+
+void swapNodes(Tree* first, Tree* second){
+    Tree buf = *second;
+    *second = *first;
+    *first = buf;
+}
+
+void sortNodes(Tree nodesArray[], int left, int right){
+    Tree pivot = nodesArray[left];
+    int leftStep = left;
+    int rightStep = right;
+    while(leftStep < rightStep){
+        while((leftStep < rightStep) && nodesArray[rightStep].frequency >= pivot.frequency){
+            rightStep--;
+        }
+        while((leftStep < rightStep) && (nodesArray[leftStep].frequency <= pivot.frequency)){
+            leftStep++;
+        }
+        if(leftStep != rightStep){
+            swapNodes(&nodesArray[leftStep], &nodesArray[rightStep]);
+        }else{
+            swapNodes(&nodesArray[left], &nodesArray[rightStep]);
+        }
+    }
+    if(leftStep > left){
+        sortNodes(nodesArray, left, leftStep - 1);
+    }
+    if(rightStep < right){
+        sortNodes(nodesArray, rightStep + 1, right);
+    }
+
+}
+
+Tree* createTree(Tree nodesArray[], int arrayLength){
+    int curNodeNumber = 0;
+    while(arrayLength - curNodeNumber > 1){
+        int newFrequency = nodesArray[curNodeNumber].frequency + nodesArray[curNodeNumber + 1].frequency;
+        putInNode(&nodesArray[arrayLength], 0, newFrequency, &nodesArray[curNodeNumber], &nodesArray[curNodeNumber + 1]);
+        curNodeNumber += 2;
+        sortNodes(nodesArray, curNodeNumber, arrayLength++);
+    }
+    return &nodesArray[arrayLength - 1];
+}
+
+void buildCodesForSymbols(Tree* root, char code[], int curPoint, Code codes[]){
+    if(root->left == NULL){
+        memcpy(codes[root->value].code, code, curPoint);
+    }else{
+        code[curPoint] = '0';
+        buildCodesForSymbols(root->left, code, curPoint + 1, codes);
+        code[curPoint] = '1';
+        buildCodesForSymbols(root->right, code, curPoint + 1, codes);
+    }
+}
+
+void writeTree(Tree* root, FILE* out, unsigned char *symbolToPrint, int *bitPosition){
+    if(root->left == NULL){
+        *symbolToPrint |= (1 << *bitPosition);
+        *bitPosition -= 1;
+        if(*bitPosition == -1){
+            *bitPosition = 7;
+            fprintf(out, "%c", *symbolToPrint);
+        }
+        for(int i = 7; i >= 0; i--){
+            *symbolToPrint |= (1 << *bitPosition);
+            if(!(root->value & (1 << i))){
+                *symbolToPrint -= (1 << *bitPosition);
+            }
+            *bitPosition -= 1;
+            if(*bitPosition == -1){
+                *bitPosition = 7;
+                fprintf(out, "%c", *symbolToPrint);
+
+            }
+        }
+    }else{
+        *symbolToPrint |= (1 << *bitPosition);
+        *symbolToPrint -= (1 << *bitPosition);
+        *bitPosition -= 1;
+        if(*bitPosition == -1){
+            *bitPosition = 7;
+            fprintf(out, "%c", *symbolToPrint);
+        }
+        writeTree(root->left, out, symbolToPrint, bitPosition);
+        writeTree(root->right, out, symbolToPrint, bitPosition);
+    }
+}
+
+void writeInput(Code codes[], char *input, int sizeInput, unsigned char symbolToPrint, int bitPosition, FILE* in, FILE* out){
+    int leaveCycle = 0;
+    sizeInput = fread(input, sizeof(char), LENGTH, in);
+    do{
+        for(int i = 0; i < sizeInput; i++){
+            int j = 0;
+            unsigned char symbol = input[i];
+            while(j <= 255 && isdigit(codes[symbol].code[j])){       
+                symbolToPrint |= (1 << bitPosition);
+                if(codes[symbol].code[j] == '0'){
+                    symbolToPrint -= (1 << bitPosition);
+                }
+                --bitPosition;
+                if(bitPosition == -1){
+                    fprintf(out, "%c", symbolToPrint);
+                    bitPosition = 7;
+                }
+                j++;
+            }
+        }
+        if(sizeInput == LENGTH){
+            sizeInput = fread(input, sizeof(char), LENGTH, in);
+        }else{
+            leaveCycle = 1;
+        }
+    }while(leaveCycle != 1);
+    if(bitPosition != 7){
+        fprintf(out, "%c", symbolToPrint);
+    }
+}
+
+void printSymbolsCount(unsigned int symbolsCount, int byteCount, FILE* out){
+    char symbol = '0';
+    int firstBitPosition;
+    if(byteCount == 4){
+        firstBitPosition = 30;
+    }else{
+        firstBitPosition = byteCount * 8 - 1;
+    }
+    for(int i = firstBitPosition; i >= 0; i--){
+        symbol |= (1 << (i % 8));
+        if(!(symbolsCount & (1 << i))){
+            symbol -= (1 << (i % 8));
+        }
+        if(i % 8 == 0){
+            fprintf(out, "%c", symbol);
+        }
+    }
+}
+
+void codeIdenticalSymbolInput(FILE* in, FILE* out){
+    int symbol = fgetc(in);
+    fprintf(out, "%c", symbol);
+    char symbolToPrint = '0';
+    int bitPosition = 7;
+    symbolToPrint |= (1 << bitPosition);
+    --bitPosition;
+    while(symbol != EOF){
+        symbol = fgetc(in);
+        symbolToPrint |= (1 << bitPosition);
+        if(symbol == EOF){
+            symbolToPrint -= (1 << bitPosition);
+        }
+        --bitPosition;
+        if(bitPosition == -1){
+            fprintf(out, "%c", symbolToPrint);
+            bitPosition = 7;
+        }
+    }
+    if(bitPosition != 7){
+        fprintf(out, "%c", symbolToPrint);
+    }
+}
+
+void coding(FILE* in, FILE* out){
+    char *input = (char *)malloc(sizeof(char) * LENGTH);
+    int *symbolsCountArray = (int *)calloc(256, sizeof(int));
+    unsigned int sizeInput = fread(input, sizeof(char), LENGTH, in);
+    int symbolsCollection = 0;
+    unsigned int symbolsCount = sizeInput;
+    calculateSymbolsCountAndCollection(symbolsCountArray, input, sizeInput, &symbolsCount, &symbolsCollection, in);
+    if(sizeInput >= 1){
+        fprintf(out, "%c", symbolsCollection - 1);
+        if(symbolsCollection == 1){
+            codeIdenticalSymbolInput(in, out);
+        }else{
+            Tree *nodesArray = (Tree *)malloc(sizeof(Tree) * (symbolsCollection * 2 - 1));
+            makeNodeArray(symbolsCountArray, nodesArray);
+            sortNodes(nodesArray, 0, symbolsCollection - 1);
+            Tree* root = createTree(nodesArray, symbolsCollection);
+            Code *codes = (Code *)malloc(sizeof(Code) * 256);
+            unsigned char symbolToPrint;
+            int bitPosition = 7;
+            char *charCodes = (char *)malloc(symbolsCollection * sizeof(char));
+            buildCodesForSymbols(root, charCodes, 0, codes);
+            free(charCodes);
+            if(symbolsCollection <= 32){
+                printSymbolsCount(symbolsCount, 3, out);
+            }else if(symbolsCollection <= 128){
+                printSymbolsCount(symbolsCount, 4, out);
+            }
+            writeTree(root, out, &symbolToPrint, &bitPosition);
+            writeInput(codes, input, sizeInput, symbolToPrint, bitPosition, in, out);
+            free(codes);
+            free(nodesArray);
+        }
+    }
+    free(symbolsCountArray);
+    free(input);
+}
+
+int readNumber(unsigned char *symbol, int *bitPosition, FILE* in){
+    int number = 0;
+    int degree = 128; // 2^7 = 128
+    for(int i = 0; i < 8; i++){
+        *bitPosition -= 1;
+        if(*bitPosition == -1){
+            *symbol = fgetc(in);
+            *bitPosition = 7;
+        }
+        if(*symbol & (1 << *bitPosition)){
+            number += degree;
+        }
+        degree /= 2;
+    }
+    return number;
+}
+
+void insertNodeInTree(Tree nodesArray[], int nodePosition){
+    int insertDone = 0;
+    int posToInsert = nodePosition - 1;
+    while(insertDone != 1){
+        if(nodesArray[posToInsert].left == NULL && nodesArray[posToInsert].value == NOTLEAF){
+            nodesArray[posToInsert].left = &nodesArray[nodePosition];
+            insertDone = 1;
+        }else if(nodesArray[posToInsert].right == NULL && nodesArray[posToInsert].value == NOTLEAF){
+            nodesArray[posToInsert].right = &nodesArray[nodePosition];
+            insertDone = 1;
+        }
+        posToInsert--;
+    }
+    if(posToInsert < 0 && insertDone == 0){
+        Tree* newNode = createNode(NOTLEAF, 0, &nodesArray[nodePosition - 1], &nodesArray[nodePosition]);
+        nodesArray[nodePosition + 1] = *newNode;
+        nodesArray[nodePosition - 3].right = newNode;
+    }
+}
+
+Tree* createTreeFromInput(Tree* nodesArray, int symbolsCollection, unsigned char *symbol, int *bitPosition, FILE* in){
+    int nodesCount = symbolsCollection * 2 - 1;
+    int i = 0;
+    *symbol = fgetc(in);
+    while(i < nodesCount){
+        if(*bitPosition == -1){
+            *bitPosition = 7;
+            *symbol = fgetc(in);
+        }
+        if(*symbol & (1 << *bitPosition)){
+            putInNode(&nodesArray[i], readNumber(symbol, bitPosition, in), 0, NULL, NULL);
+            insertNodeInTree(nodesArray, i);
+        }else{
+            putInNode(&nodesArray[i], NOTLEAF, 0, NULL, NULL);
+            if(i != 0){
+                insertNodeInTree(nodesArray, i);
+            }
+        }
+        i++;
+        *bitPosition -= 1;
+    }
+    return &nodesArray[0];
+}
+
+void decodeSymbols(Tree* root, unsigned char symbol, int bitPosition, int symbolsCount, char considerSymbolsCount, FILE* in, FILE* out){
+    Tree* newRoot = root;
+    if(bitPosition != -1){
+        while(bitPosition != -1 && symbolsCount != 0){
+            if(symbol & (1 << bitPosition)){
+                newRoot = newRoot->right;
+            }else{
+                newRoot = newRoot->left;
+            }
+            if(newRoot->left == NULL){
+                fprintf(out, "%c", newRoot->value);
+                newRoot = root;
+                symbolsCount--;
+            }
+            bitPosition--;
+        }
+        bitPosition = 7;
+    }
+    char *inputData = (char *)malloc((sizeof(char)) * LENGTH);
+    int leaveCycle = 0;
+    do{
+        int readSymbolsCount = fread(inputData, sizeof(char), LENGTH, in);
+        if(readSymbolsCount != LENGTH){
+            leaveCycle = 1;
+        }
+        int i = 0;
+        while(i < readSymbolsCount && (symbolsCount != 0 || considerSymbolsCount)){
+            if(inputData[i] & (1 << bitPosition)){
+            //if(inputData[i] == '0'){ //right - 1
+                newRoot = newRoot->right;
+            }else{
+                newRoot = newRoot->left;
+            }
+            if(newRoot->left == NULL){
+                fprintf(out, "%c", newRoot->value);
+                newRoot = root;
+                --symbolsCount;
+            }
+            if(inputData[i] == '\0' && i == LENGTH){
+                leaveCycle = 1;
+            }
+            --bitPosition;
+            if(bitPosition == -1){
+                bitPosition = 7;
+                i++;
+            }
+        }
+    }while(leaveCycle != 1 && (symbolsCount != 0 || considerSymbolsCount));
+    free(inputData);
+}
+
+unsigned int readSymbolsCount(int byteCount, FILE* in){
+    unsigned int symbolsCount = 0;
+    unsigned char symbol = fgetc(in);
+    int firstBitPosition;
+    if(byteCount == 4){
+        firstBitPosition = 30;
+    }else{
+        firstBitPosition = byteCount * 8 - 1;
+    }
+    for(int i = firstBitPosition; i >= 0; i--){
+        symbolsCount |= (1 << i);
+        if(!(symbol & (1 << (i % 8)))){
+            symbolsCount -= (1 << i);
+        }
+        if(i != 0 && i % 8 == 0){
+            symbol = fgetc(in);
+        }
+    }
+    return symbolsCount;
+}
+
+void decodeIdenticalSymbolsInput(FILE* in, FILE* out){
+    char codedSymbol = fgetc(in);
+    char inputSymbol = fgetc(in);
+    int bitPosition = 7;
+    while(inputSymbol & (1 << bitPosition)){
+        fprintf(out, "%c", codedSymbol);
+        --bitPosition;
+        if(bitPosition == -1){
+            bitPosition = 7;
+            inputSymbol = fgetc(in);
+        }
+    }
+}
+
+void decoding(FILE* in, FILE* out){
+    int symbolsCollection = fgetc(in);
+    unsigned char symbol = symbolsCollection;
+    if(symbolsCollection != EOF){
+        symbolsCollection += 1;
+    }
+    if(symbolsCollection == 1){
+        decodeIdenticalSymbolsInput(in, out);
+    }else if(symbolsCollection >= 1){
+        unsigned int symbolsCount = LENGTH;
+        char considerSymbolsCount = NOTCONSIDER;
+        if(symbolsCollection <= 32){
+            symbolsCount = readSymbolsCount(3, in);
+            considerSymbolsCount = CONSIDER;
+        }else if(symbolsCollection <= 128){
+            symbolsCount = readSymbolsCount(4, in);
+            considerSymbolsCount = CONSIDER;
+        }
+        int bitPosition = 7;
+        int nodesCount = symbolsCollection * 2 - 1;
+        Tree* nodesArray = (Tree *)malloc(nodesCount * sizeof(Tree));
+        Tree* root = createTreeFromInput(nodesArray, symbolsCollection, &symbol, &bitPosition, in);
+        //printTree(root);
+        decodeSymbols(root, symbol, bitPosition, symbolsCount, considerSymbolsCount, in, out);
+        free(nodesArray);
+    }
+}
+
+int main(){
+    FILE* in = fopen("in.txt", "rb");
+    //FILE* out = stdout;
+    FILE* out = fopen("out.txt", "wb");
+    char mode;
+    if(fscanf(in, "%c", &mode) != 1){
+        fprintf(out, "bad input");
+        fclose(in);
+        fclose(out);
+        return 0;
+    }
+    if(mode == 'c'){
+        coding(in, out);
+    }else if(mode == 'd'){
+        decoding(in, out);
+    }else{
+        fprintf(out, "bad input");
+    }
+    fclose(in);
+    fclose(out);
+    return 0;
+}
